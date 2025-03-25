@@ -1,23 +1,117 @@
+from numpy import copy
+import torch
+from torch.utils.data import DataLoader
+from torch import nn
+import copy
+from torch.utils.tensorboard import SummaryWriter
+
 class Server:
-    def __init__(self, rounds, clients, model):
-        # ≥ı ºªØ∑˛ŒÒ∆˜
-        # ...existing code...
+    def __init__(self, 
+                 rounds, 
+                 clients, 
+                 test_dataloader, 
+                 global_model,
+                 client_ratio=0.5):
         self.rounds =  rounds
         self.clients = clients
-        self.model = model
+        self.global_model = global_model
+        self.test_dataloader = test_dataloader
+        self.client_ratio = client_ratio
+        self.w = {}
+    
+    def select_clients(self, roud):
+        selected_clients = int(self.client_ratio * len(self.clients))
 
-    def train(self):
-        parameters = self.model.state_dict()
-        for t in range(self.rounds):
-            for _, client in enumerate(self.clients):
-                client.train(parameters)
+        if roud >= 0:
+            rand_indxs = torch.randperm(len(self.clients)).tolist()
+            print(rand_indxs[:selected_clients])
+            return rand_indxs[:selected_clients]
+        else:
+            gini_clients = []
+            for client_id in range(10):
+                gini_clients.append((self.clients[client_id].cal_gini(), client_id))
+            gini_clients.sort()
+            rand_indxs = []
+            for i in range(selected_clients):
+                rand_indxs.append(gini_clients[i][1])
+            print(f'gini score:{gini_clients}')
+            print(rand_indxs)
+            return rand_indxs
         
-        pass
 
-    def aggregate_model_parameters(self):
-        # æ€∫œƒ£–Õ≤Œ ˝µƒ∑Ω∑®
-        # ...existing code...
-        global_parameters
-        for _, client in enumerate(self.clients):
-            
-        pass
+        
+        return rand_indxs[:selected_clients]
+
+
+    def train(self, beta=0.99, beta_zero = 0.9999, rou=0.992):
+        
+        accuracy_history = []
+        writer = SummaryWriter('logs')
+
+        accuracy, loss = self.eval_model(-1)
+        accuracy_history.append(accuracy)
+        local_epoch = 2
+        for t in range(self.rounds):
+            global_parameters = self.global_model.state_dict()
+            beta_t = beta + (beta_zero - beta) * rou**t
+            print(f'beta: {beta_t:.10f}')
+
+            # rand_indxs = torch.randperm(len(self.clients)).tolist()
+            # selected_clients = int(self.client_ratio * len(self.clients))
+            # print(rand_indxs[:selected_clients])
+
+            rand_indxs = self.select_clients(t)
+
+
+            for i in rand_indxs:
+                client = self.clients[i]
+                
+
+                client.local_train(self.global_model, 
+                                   global_parameters,
+                                   local_epochs = local_epoch,
+                                   local_batch_size = 64,
+                                   beta=beta_t)
+                self.w[i] = client.local_model.state_dict()
+            self.aggregate_model_parameters(rand_indxs)
+            accuracy, loss = self.eval_model(t)
+            writer.add_scalar(tag='train/accuracy', scalar_value=accuracy, global_step=t, walltime=15)
+            accuracy_history.append(accuracy)
+        writer.close()
+        return accuracy_history
+    
+    def aggregate_model_parameters(self, rand_indxs):
+        w_avg = copy.deepcopy(self.w[rand_indxs[0]])
+        dataset_sum = 0
+        for i in rand_indxs:
+            dataset_sum += len(self.clients[i].train_dataset)
+        
+        for k in w_avg.keys():
+            w_avg[k] *= len(self.clients[rand_indxs[0]].train_dataset)
+            for i in range(1, len(rand_indxs)):
+                w_avg[k] += self.w[rand_indxs[i]][k] * len(self.clients[rand_indxs[i]].train_dataset)
+            w_avg[k] /= dataset_sum
+        self.global_model.load_state_dict(w_avg, strict = True)
+
+        return w_avg
+    
+    def eval_model(self, round):
+        total_test_loss = 0
+        self.global_model.eval()
+        loss_func = nn.CrossEntropyLoss()
+        with torch.no_grad():
+            sum_acuu = 0
+            num = 0
+            for data, label in self.test_dataloader:
+                data, label = data.to('cuda'), label.to('cuda')
+                output = self.global_model(data)
+                loss = loss_func(output, label)
+                
+                total_test_loss += loss.item()
+                output = torch.argmax(output, dim=1)
+                sum_acuu += (output == label).float().mean()
+                num += 1
+            accuracy = sum_acuu / num
+            avg_loss = total_test_loss / num
+        print(f'Á¨¨{round + 1}ËΩÆÔºö ÂáÜÁ°ÆÁéá: {accuracy}, ÊçüÂ§±ÁéáÔºö{avg_loss}')
+        return accuracy, avg_loss
