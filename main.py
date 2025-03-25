@@ -6,7 +6,7 @@ from server import Server
 from torchvision import datasets, transforms
 import torch
 from model import  get_model
-from utils import plot
+from utils import plot, create_long_tail_split_noniid, create_dirichlet_split_noniid
 from torch.utils.data import DataLoader, TensorDataset 
 
 
@@ -44,54 +44,24 @@ def main():
     test_data_size = test_data.shape[0]
     test_data_loader = DataLoader(TensorDataset(test_data, torch.as_tensor(test_labels)), batch_size = 64)
 
-    classes = np.max(train_labels) + 1
-    clients_train_data = {}
-    clients_train_label = {}
-    # åˆ’åˆ†æ•°æ®é›†
-    # idxs = np.random.permutation(train_data_size)
-    # batch_idxs = np.array_split(idxs, 10)
-    alpha = 0.99
-    batch_idxs = []
-    for i in range(10):
-        batch_idxs.append([])
-    print(batch_idxs)
-    for id in range(10):
-        all_idxs = []
-        for j, label in enumerate(train_labels):
-            if label == id:
-                all_idxs.append(j)
-        idxs = np.random.permutation(len(all_idxs))
-        num = 0
-        client_id = 0
-        for j in range(len(idxs)):
-            if client_id == id:
-                if num + 1 <= int(alpha * len(idxs)):
-                    batch_idxs[client_id].append(all_idxs[idxs[j]])
-                    num += 1
-                else:
-                    client_id += 1
-                    num = 0
-            else:
-                if (num + 1) * 9 <= len(idxs) - int(alpha  * len(idxs)):
-                    batch_idxs[client_id].append(all_idxs[idxs[j]])
-                    num += 1
-                else:
-                    num = 0
-                    client_id += 1
-        
 
-    for i in range(10):
-        clients_train_data[i] = train_data[batch_idxs[i]]
-        clients_train_label[i] = train_labels[batch_idxs[i]]
-        distribution = [list(clients_train_label[i]).count(j) for j in range(classes)]
-        print(distribution)
-
+    # clients_train_data, clients_train_label = create_long_tail_split_noniid(train_data=train_data,
+    #                                                                     train_labels=train_labels,
+    #                                                                     alpha=0.1,
+    #                                                                     clients_number=10)
+    clients_train_data, clients_train_label = create_dirichlet_split_noniid(
+        train_data=train_data,
+        train_labels=train_labels,
+        alpha=0.2,
+        clients_number=10,
+        seed=42  # ÉèÖÃËæ»úÊıÖÖ×Ó
+    )
     
     device = 'cuda'
     clients = []
     for i in range(10):
         clients.append(Client(i, clients_train_data[i], clients_train_label[i]))
-    server = Server(rounds=500, 
+    server = Server(rounds=200, 
                     clients=clients, 
                     test_dataloader=test_data_loader,  
                     global_model=get_model().to(device=device))

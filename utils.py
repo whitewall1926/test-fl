@@ -2,6 +2,8 @@ import json
 import matplotlib.pyplot as plt
 import torch
 import numpy as np
+from torch.distributions.dirichlet import Dirichlet
+from torch.utils.data import DataLoader, TensorDataset
 
 def load_config(config_path='config.json'):
     """
@@ -36,3 +38,123 @@ def plot(accuracy_history, save_path=None):
         plt.savefig(save_path)
     else:
         plt.show()
+
+
+def create_long_tail_split_noniid(train_data, train_labels, alpha=1, clients_number=10, seed=42):
+    """
+    使用长尾分布划分数据集 (Non-IID)
+    
+    Args:
+        train_data: 训练数据 (Tensor)
+        train_labels: 训练标签 (Tensor 或 numpy 数组)
+        alpha: 长尾分布参数
+        clients_number: 客户端数量
+        seed: 随机数种子，保证结果一致性
+        
+    Returns:
+        clients_train_data: 每个客户端的数据
+        clients_train_label: 每个客户端的标签
+    """
+    # 设置随机数种子
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    
+    classes = np.max(train_labels) + 1
+    clients_train_data = {}
+    clients_train_label = {}
+    batch_idxs = []
+    
+    for i in range(clients_number):
+        batch_idxs.append([])
+    for id in range(classes):
+        all_idxs = []
+        for j, label in enumerate(train_labels):
+            if label == id:
+                all_idxs.append(j)
+        idxs = np.random.permutation(len(all_idxs))
+        num = 0
+        client_id = 0
+        for j in range(len(idxs)):
+            if client_id == id:
+                if num + 1 <= int(alpha * len(idxs)):
+                    batch_idxs[client_id].append(all_idxs[idxs[j]])
+                    num += 1
+                else:
+                    client_id += 1
+                    num = 0
+            else:
+                if (num + 1) * (clients_number - 1) <= len(idxs) - int(alpha * len(idxs)):
+                    batch_idxs[client_id].append(all_idxs[idxs[j]])
+                    num += 1
+                else:
+                    num = 0
+                    client_id += 1
+
+    for i in range(clients_number):
+        clients_train_data[i] = train_data[batch_idxs[i]]
+        clients_train_label[i] = train_labels[batch_idxs[i]]
+        distribution = [list(clients_train_label[i]).count(j) for j in range(classes)]
+        print(distribution)
+    return clients_train_data, clients_train_label
+
+
+def create_dirichlet_split_noniid(train_data, train_labels, alpha, clients_number=10, seed=42):
+    """
+    使用 Dirichlet 分布划分数据集 (Non-IID)
+    
+    Args:
+        train_data: 训练数据 (Tensor)
+        train_labels: 训练标签 (Tensor 或 numpy 数组)
+        alpha: Dirichlet 分布的浓度参数 (越小越不均匀)
+        clients_number: 客户端数量
+        seed: 随机数种子，保证结果一致性
+        
+    Returns:
+        clients_train_data: 每个客户端的数据
+        clients_train_label: 每个客户端的标签
+    """
+    # 设置随机数种子
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
+    classes = np.max(train_labels) + 1
+    label_distribution = Dirichlet(torch.tensor([alpha] * clients_number))
+    class_indices = [np.where(train_labels == i)[0] for i in range(classes)]
+    
+    clients_train_data = {i: [] for i in range(clients_number)}
+    clients_train_label = {i: [] for i in range(clients_number)}
+    
+    for c in range(classes):
+        proportions = label_distribution.sample().numpy()
+        proportions = (proportions / proportions.sum()) * len(class_indices[c])
+        proportions = proportions.astype(int)
+
+        # 确保每个客户端至少分配一个样本
+        for i in range(len(proportions)):
+            if proportions[i] == 0:
+                proportions[i] = 1
+        # 调整总数以匹配类别样本总数
+        while sum(proportions) > len(class_indices[c]):
+            proportions[np.argmax(proportions)] -= 1
+        while sum(proportions) < len(class_indices[c]):
+            proportions[np.argmin(proportions)] += 1
+
+        split_indices = np.split(class_indices[c], np.cumsum(proportions)[:-1])
+        
+        for client_id, indices in enumerate(split_indices):
+            clients_train_data[client_id].extend(train_data[indices])
+            clients_train_label[client_id].extend(train_labels[indices])
+    
+    for client_id in range(clients_number):
+        if len(clients_train_data[client_id]) > 0:
+            clients_train_data[client_id] = torch.stack(clients_train_data[client_id])
+            clients_train_label[client_id] = torch.tensor(clients_train_label[client_id])
+        else:
+            print(f"警告: 客户端 {client_id} 没有分配到数据！")
+    
+    # 打印每个客户端分配到的各个类标签的数量
+    for client_id in range(clients_number):
+        label_counts = torch.bincount(clients_train_label[client_id], minlength=classes)
+        print(f"客户端 {client_id} 的标签分布: {label_counts.tolist()}")
+    
+    return clients_train_data, clients_train_label

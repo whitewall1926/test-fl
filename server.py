@@ -1,10 +1,11 @@
+# -*- coding: utf-8 -*-
+
 from numpy import copy
 import torch
 from torch.utils.data import DataLoader
 from torch import nn
 import copy
 from torch.utils.tensorboard import SummaryWriter
-
 class Server:
     def __init__(self, 
                  rounds, 
@@ -34,7 +35,7 @@ class Server:
             rand_indxs = []
             for i in range(selected_clients):
                 rand_indxs.append(gini_clients[i][1])
-            print(f'gini score:{gini_clients}')
+            # print(f'gini score:{gini_clients}')
             print(rand_indxs)
             return rand_indxs
         
@@ -75,7 +76,7 @@ class Server:
                 self.w[i] = client.local_model.state_dict()
             self.aggregate_model_parameters(rand_indxs)
             accuracy, loss = self.eval_model(t)
-            writer.add_scalar(tag='train/accuracy', scalar_value=accuracy, global_step=t, walltime=15)
+            writer.add_scalar(tag=f'dirichlet_alpha0.2/train/accuracy', scalar_value=accuracy, global_step=t, walltime=15)
             accuracy_history.append(accuracy)
         writer.close()
         return accuracy_history
@@ -113,5 +114,5 @@ class Server:
                 num += 1
             accuracy = sum_acuu / num
             avg_loss = total_test_loss / num
-        print(f'第{round + 1}轮： 准确率: {accuracy}, 损失率：{avg_loss}')
+        print(f'server side--- {round + 1} roud: accuracy: {accuracy}, loss: {avg_loss}')
         return accuracy, avg_loss
