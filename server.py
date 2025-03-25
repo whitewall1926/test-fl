@@ -17,7 +17,6 @@ class Server:
     def aggregate_model_parameters(self):
         # 聚合模型参数的方法
         # ...existing code...
-        global_parameters
         for _, client in enumerate(self.clients):
             
         pass
