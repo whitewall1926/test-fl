@@ -4,6 +4,8 @@ import torch
 import numpy as np
 from torch.distributions.dirichlet import Dirichlet
 from torch.utils.data import DataLoader, TensorDataset
+import matplotlib.pylab as plt
+from torch.utils.tensorboard import SummaryWriter
 
 def load_config(config_path='config.json'):
     """
@@ -39,8 +41,40 @@ def plot(accuracy_history, save_path=None):
     else:
         plt.show()
 
+def add_confusion_matrix(cm, 
+                         title='Confusion matrix', 
+                         cmap=plt.cm.Blues,
+                         log_dir='log_data',
+                         tag='unknown'):
+    
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    cm = np.array(cm) 
+    tick_marks = np.arange(len(cm))
+    classes = np.arange(len(cm))
+    plt.xticks(tick_marks, classes)
+    plt.yticks(tick_marks, classes)
 
-def create_long_tail_split_noniid(train_data, train_labels, alpha=1, clients_number=10, seed=42):
+    fmt = 'd'
+    thresh = cm.max() / 2.
+    for i, j in np.ndindex(cm.shape):
+        plt.text(j, i, format(cm[i, j], fmt),
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
+
+    plt.ylabel('class')
+    plt.xlabel('client')
+    plt.tight_layout()
+    writer = SummaryWriter(log_dir=log_dir)
+    writer.add_figure(tag=tag, figure=plt.gcf(), global_step=0)
+    writer.close()
+
+def create_long_tail_split_noniid(train_data, 
+                                  train_labels, 
+                                  alpha=1, 
+                                  clients_number=10, 
+                                  seed=42):
     """
     使用长尾分布划分数据集 (Non-IID)
     
@@ -98,7 +132,12 @@ def create_long_tail_split_noniid(train_data, train_labels, alpha=1, clients_num
     return clients_train_data, clients_train_label
 
 
-def create_dirichlet_split_noniid(train_data, train_labels, alpha, clients_number=10, seed=42):
+def create_dirichlet_split_noniid(train_data, 
+                                  train_labels, 
+                                  alpha=1, 
+                                  clients_number=10, 
+                                  seed=42,
+                                  log_dir='log_data'):
     """
     使用 Dirichlet 分布划分数据集 (Non-IID)
     
@@ -153,8 +192,15 @@ def create_dirichlet_split_noniid(train_data, train_labels, alpha, clients_numbe
             print(f"警告: 客户端 {client_id} 没有分配到数据！")
     
     # 打印每个客户端分配到的各个类标签的数量
+    conf_matrix = [[] for _ in range(clients_number)]
+
     for client_id in range(clients_number):
         label_counts = torch.bincount(clients_train_label[client_id], minlength=classes)
+        conf_matrix[client_id].extend(label_counts.tolist())
         print(f"客户端 {client_id} 的标签分布: {label_counts.tolist()}")
+
+    add_confusion_matrix(conf_matrix, 
+                         log_dir=log_dir,
+                         tag=f'mnist/dirichlet{alpha}')
     
     return clients_train_data, clients_train_label

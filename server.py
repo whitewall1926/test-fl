@@ -13,6 +13,7 @@ class Server:
                  test_dataloader, 
                  global_model,
                  client_ratio=0.5):
+        
         self.rounds =  rounds
         self.clients = clients
         self.global_model = global_model
@@ -20,7 +21,8 @@ class Server:
         self.client_ratio = client_ratio
         self.w = {}
     
-    def select_clients(self, roud):
+    def select_clients(self, roud, limit_rounds=30):
+
         selected_clients = int(self.client_ratio * len(self.clients))
 
         if roud >= 0:
@@ -44,14 +46,22 @@ class Server:
         return rand_indxs[:selected_clients]
 
 
-    def train(self, beta=0.99, beta_zero = 0.9999, rou=0.992):
+    def train(self, 
+              beta=0.99, 
+              beta_zero = 0.9999, 
+              rou=0.992,
+              log_dir = 'log_data',
+              local_epoch=1,
+              local_batch_size = 32,
+              learning_rate=0.001,
+              limit_rounds=30
+              ):
         
         accuracy_history = []
-        writer = SummaryWriter('logs')
+        writer = SummaryWriter(log_dir)
 
         accuracy, loss = self.eval_model(-1)
         accuracy_history.append(accuracy)
-        local_epoch = 2
         for t in range(self.rounds):
             global_parameters = self.global_model.state_dict()
             beta_t = beta + (beta_zero - beta) * rou**t
@@ -61,7 +71,7 @@ class Server:
             # selected_clients = int(self.client_ratio * len(self.clients))
             # print(rand_indxs[:selected_clients])
 
-            rand_indxs = self.select_clients(t)
+            rand_indxs = self.select_clients(t, limit_rounds=limit_rounds)
 
 
             for i in rand_indxs:
@@ -71,12 +81,13 @@ class Server:
                 client.local_train(self.global_model, 
                                    global_parameters,
                                    local_epochs = local_epoch,
-                                   local_batch_size = 64,
-                                   beta=beta_t)
+                                   local_batch_size = local_batch_size,
+                                   beta=beta_t,
+                                   lr=learning_rate)
                 self.w[i] = client.local_model.state_dict()
             self.aggregate_model_parameters(rand_indxs)
             accuracy, loss = self.eval_model(t)
-            writer.add_scalar(tag=f'dirichlet_alpha0.2/train/accuracy', scalar_value=accuracy, global_step=t, walltime=15)
+            writer.add_scalar(tag=f'dirichlet_alpha0.4/train/accuracy', scalar_value=accuracy, global_step=t, walltime=15)
             accuracy_history.append(accuracy)
         writer.close()
         return accuracy_history

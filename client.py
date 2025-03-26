@@ -3,7 +3,10 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.data import WeightedRandomSampler
 class Client:
-    def __init__(self, client_id, datas, labels):
+    def __init__(self, 
+                 client_id, 
+                 datas, 
+                 labels):
         self.client_id = client_id
         self.train_dataset = TensorDataset(datas, torch.as_tensor(labels))
         self.train_dataloader = None
@@ -30,10 +33,12 @@ class Client:
     def local_train(self, 
                     net, 
                     global_paramers, 
+                    lr=0.001,
                     local_epochs = 1, 
                     local_batch_size = 32,
-                    beta = 0.99):
-        net = net.to('cuda')
+                    beta = 0.99,
+                    device='cuda'):
+        net = net.to(device)
         net.load_state_dict(global_paramers)
 
         
@@ -66,10 +71,10 @@ class Client:
         #                                     shuffle=True)
         loss_func = torch.nn.CrossEntropyLoss()
         # opti = torch.optim.Adam(net.parameters(), lr=0.001)
-        opti = torch.optim.SGD(net.parameters(), lr=0.001)
+        opti = torch.optim.SGD(net.parameters(), lr=lr)
         for epoch in range(local_epochs):
             for data, label in self.train_data_loader:
-                data, label = data.to('cuda'), label.to('cuda')
+                data, label = data.to(device), label.to(device)
                 opti.zero_grad()
                 output = net(data)
                 loss = loss_func(output, label)
