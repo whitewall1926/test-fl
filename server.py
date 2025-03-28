@@ -12,7 +12,8 @@ class Server:
                  clients, 
                  test_dataloader, 
                  global_model,
-                 client_ratio=0.5):
+                 client_ratio=0.5,
+                 config = None):
         
         self.rounds =  rounds
         self.clients = clients
@@ -20,12 +21,17 @@ class Server:
         self.test_dataloader = test_dataloader
         self.client_ratio = client_ratio
         self.w = {}
+        if config is not None:
+            self.config = config
     
-    def select_clients(self, roud, limit_rounds=30):
+    def select_clients(self, roud, limit_rounds=0):
 
         selected_clients = int(self.client_ratio * len(self.clients))
-
-        if roud >= 0:
+        if limit_rounds == 0:
+            print(f'server side: clients: random selection')
+        else:
+            print(f'server side: clinets: gini before {limit_rounds}, then random selection')
+        if roud >= limit_rounds:
             rand_indxs = torch.randperm(len(self.clients)).tolist()
             print(rand_indxs[:selected_clients])
             return rand_indxs[:selected_clients]
@@ -54,7 +60,7 @@ class Server:
               local_epoch=1,
               local_batch_size = 32,
               learning_rate=0.001,
-              limit_rounds=30
+              limit_rounds=0
               ):
         
         accuracy_history = []
@@ -65,7 +71,7 @@ class Server:
         for t in range(self.rounds):
             global_parameters = self.global_model.state_dict()
             beta_t = beta + (beta_zero - beta) * rou**t
-            print(f'beta: {beta_t:.10f}')
+            print(f'beta_t: {beta_t:.10f}')
 
             # rand_indxs = torch.randperm(len(self.clients)).tolist()
             # selected_clients = int(self.client_ratio * len(self.clients))
@@ -83,11 +89,18 @@ class Server:
                                    local_epochs = local_epoch,
                                    local_batch_size = local_batch_size,
                                    beta=beta_t,
-                                   lr=learning_rate)
+                                   lr=learning_rate,
+                                   iwds_enabled = self.config['strategy']['iwds']['enabled'])
                 self.w[i] = client.local_model.state_dict()
             self.aggregate_model_parameters(rand_indxs)
             accuracy, loss = self.eval_model(t)
-            writer.add_scalar(tag=f'dirichlet_alpha0.4/train/accuracy', scalar_value=accuracy, global_step=t, walltime=15)
+            if self.config['dataset']['distribution'] == 'dirichlet':
+                writer.add_scalar(tag=f'dirichlet_alpha{self.config["dataset"]["alpha"]}/train/accuracy', scalar_value=accuracy, global_step=t, walltime=15)
+            elif self.config['dataset']['distribution'] == 'long_tail':
+                writer.add_scalar(tag=f'long_tail_alpha{self.config["dataset"]["alpha"]}/train/accuracy', scalar_value=accuracy, global_step=t, walltime=15)
+            else:
+                raise ValueError('warning: the distribution is None')
+                # print(f'warning: the distribution is None')
             accuracy_history.append(accuracy)
         writer.close()
         return accuracy_history

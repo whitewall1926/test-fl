@@ -32,10 +32,17 @@ def main():
     # cifar10_train_dataset = datasets.cifar10(root='./data', train=True, download=True, transforms=transforms)
     # cifar10_test_dataset = datasets.cifar10(root='./data', train=False, download=True, transforms=transforms)
 
+    
 
-    train_dataset =  datasets.MNIST('./mnist_dataset', train=True, download=True)
-    test_dataset = datasets.MNIST('./mnist_dataset', train=False, download=True)
-
+    if config['dataset']['name'] == 'mnist':
+        train_dataset =  datasets.MNIST('./mnist_dataset', train=True, download=True)
+        test_dataset = datasets.MNIST('./mnist_dataset', train=False, download=True)
+        print(f'Dataset: minst')
+    elif config['dataset']['name'] == 'fashion_mnist':
+        train_dataset = datasets.FashionMNIST('./fashion_minist_dataset', train=True, download=True)
+        test_dataset = datasets.FashionMNIST('./fashion_minist_dataset', train=False, download=True)
+        print(f'Dataset: fashion_mnist')
+    
     train_data = train_dataset.data.to(torch.float)
     train_labels = train_dataset.targets.numpy()
 
@@ -58,17 +65,19 @@ def main():
                                                 batch_size = config['train']['batch_size'])
 
     
-    # clients_train_data, clients_train_label = create_long_tail_split_noniid(train_data=train_data,
-    #                                                                     train_labels=train_labels,
-    #                                                                     alpha=0.1,
-    #                                                                     clients_number=10)
-    clients_train_data, clients_train_label = create_dirichlet_split_noniid(
-        train_data=train_data,
-        train_labels=train_labels,
-        alpha=config['dataset']['alpha'],
-        clients_number=config['train']['num_clients'],
-        seed=config['system']['seed']  # dataset productivity
-    )
+    clients_train_data, clients_train_label = create_long_tail_split_noniid(train_data=train_data,
+                                                                        train_labels=train_labels,
+                                                                        alpha=config['dataset']['alpha'],
+                                                                        clients_number=config['train']['num_clients'],
+                                                                        seed=config['system']['seed'],
+                                                                        config=config)
+    # clients_train_data, clients_train_label = create_dirichlet_split_noniid(
+    #     train_data=train_data,
+    #     train_labels=train_labels,
+    #     alpha=config['dataset']['alpha'],
+    #     clients_number=config['train']['num_clients'],
+    #     seed=config['system']['seed']  # dataset productivity
+    # )
     
     device = config['system']['device']
     clients = []
@@ -78,7 +87,8 @@ def main():
     server = Server(rounds=config['train']['global_rounds'], 
                     clients=clients, 
                     test_dataloader=test_data_loader,  
-                    global_model=model.to(device=device))
+                    global_model=model.to(device=device),
+                    config=config)
                     
     accuracy_history = server.train(beta=config['strategy']['iwds']['beta'],
                                     beta_zero=config['strategy']['iwds']['beta_zero'],

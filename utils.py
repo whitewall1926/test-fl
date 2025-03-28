@@ -72,9 +72,12 @@ def add_confusion_matrix(cm,
 
 def create_long_tail_split_noniid(train_data, 
                                   train_labels, 
+                                  config,
                                   alpha=1, 
                                   clients_number=10, 
-                                  seed=42):
+                                  seed=42,
+                                  log_dir='log_data',
+                                  ):
     """
     使用长尾分布划分数据集 (Non-IID)
     
@@ -92,7 +95,7 @@ def create_long_tail_split_noniid(train_data,
     # 设置随机数种子
     torch.manual_seed(seed)
     np.random.seed(seed)
-    
+    print(f'alpha: {alpha}')
     classes = np.max(train_labels) + 1
     clients_train_data = {}
     clients_train_label = {}
@@ -123,21 +126,32 @@ def create_long_tail_split_noniid(train_data,
                 else:
                     num = 0
                     client_id += 1
+    conf_matrix = [[] for i in range(clients_number)]
+
 
     for i in range(clients_number):
         clients_train_data[i] = train_data[batch_idxs[i]]
         clients_train_label[i] = train_labels[batch_idxs[i]]
         distribution = [list(clients_train_label[i]).count(j) for j in range(classes)]
+
+        label_counts = torch.bincount(torch.tensor(clients_train_label[i]), minlength=classes)
+        conf_matrix[i].extend(label_counts.tolist())
+
         print(distribution)
+    add_confusion_matrix(conf_matrix, 
+                         log_dir=log_dir,
+                         tag=f'{config["dataset"]["name"]}/long_tail_distribution{alpha}')
     return clients_train_data, clients_train_label
 
 
 def create_dirichlet_split_noniid(train_data, 
                                   train_labels, 
+                                  config,
                                   alpha=1, 
                                   clients_number=10, 
                                   seed=42,
-                                  log_dir='log_data'):
+                                  log_dir='log_data',
+                                  ):
     """
     使用 Dirichlet 分布划分数据集 (Non-IID)
     
@@ -201,6 +215,6 @@ def create_dirichlet_split_noniid(train_data,
 
     add_confusion_matrix(conf_matrix, 
                          log_dir=log_dir,
-                         tag=f'mnist/dirichlet{alpha}')
+                         tag=f'{config["dataset"]["name"]}/dirichlet{alpha}')
     
     return clients_train_data, clients_train_label

@@ -37,7 +37,8 @@ class Client:
                     local_epochs = 1, 
                     local_batch_size = 32,
                     beta = 0.99,
-                    device='cuda'):
+                    device='cuda',
+                    iwds_enabled = True):
         net = net.to(device)
         net.load_state_dict(global_paramers)
 
@@ -62,13 +63,16 @@ class Client:
             num_samples=len(probability),
             replacement= True
         )
-
-        self.train_data_loader = DataLoader(self.train_dataset, 
-                                            batch_size = local_batch_size, 
-                                            sampler=sampler)
-        # self.train_data_loader = DataLoader(self.train_dataset, 
-        #                                     batch_size = local_batch_size, 
-        #                                     shuffle=True)
+        if iwds_enabled == True:
+            print(f'client {self.client_id} uses the method of iwds to sample')
+            self.train_data_loader = DataLoader(self.train_dataset, 
+                                                batch_size = local_batch_size, 
+                                                sampler=sampler)
+        else:
+            print(f'client {self.client_id} uses the method of random_sample')
+            self.train_data_loader = DataLoader(self.train_dataset, 
+                                                batch_size = local_batch_size, 
+                                                shuffle=True)
         loss_func = torch.nn.CrossEntropyLoss()
         # opti = torch.optim.Adam(net.parameters(), lr=0.001)
         opti = torch.optim.SGD(net.parameters(), lr=lr)

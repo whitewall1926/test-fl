@@ -1,4 +1,5 @@
 {
+    "attention:": "remember to update the configuration",
     "train": {
         "local_epoch": 2,
         "global_rounds": 200,
@@ -13,8 +14,8 @@
     },
     "dataset": {
         "name": "mnist",
-        "distribution": "dirichlet",
-        "alpha": 0.4
+        "distribution": "long_tail",
+        "alpha": 0.5
     },
     "strategy": {
         "iwds": {
@@ -24,11 +25,11 @@
             "enabled": true
         },
         "client_gini": {
-            "limit_rounds": 40,
+            "limit_rounds": 30,
             "enabled": true
         },
         "client_random": {
-            "enabled": false
+            "enabled": true
         }
     },
     "system": {
